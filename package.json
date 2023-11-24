@@ -17,6 +17,11 @@
     "eslint-config-google": "^0.14.0",
     "jscpd": "^3.5.4",
     "mocha": "^10.2.0",
-    "nyc": "^15.1.0"
+    "nyc": "^15.1.0",
+    "mongodb-memory-server": "^9.0.1"
+  },
+  "dependencies": {
+    "@athleticim/vault-manager":"git+https://github.com/athleticim/vault-manager",
+    "mongodb": "6.2.0"
   }
 }
