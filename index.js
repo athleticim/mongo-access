@@ -2,7 +2,7 @@ const {connect, indexOn}=require('./storage')
 const {
     upsert, insert, findAndUpdate,
     findAndUpdateWithOptions, update
-}=require('./')
+}=require('./writer')
 const {recallOne , recallAll, recallWithAggregate, deletOne}=require('./reader');
 
 module.exports={
