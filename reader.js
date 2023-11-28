@@ -1,74 +1,81 @@
-const {connect, verifyAndGetTenantCollection} = require('./storage');
+const {collection, connect, isGoodToStore,
+  isEmptyQuery, verifyAndGetTenantCollection} = require('./storage');
 
-async function upsert({collectionName, parameters, hostName}) {
+function recallOne({collectionName, identifier, hostName}) {
+  return recallAll({collectionName, query: {identifier}, hostName})
+      .then(singleOrUndefined);
+}
+
+function deleteOne({collectionName, identifier, hostName}) {
+  return deleteAll({collectionName, query: {identifier}, hostName});
+}
+
+async function deleteAll({collectionName, query, hostName}) {
+  const store = await verifyAndGetTenantCollection({
+    collectionName, operationMsg: `query ${JSON.stringify(query)}`, hostName,
+  });
+  return await store.deleteMany(query);
+}
+
+async function recallAll({collectionName, query, projection, hostName}) {
   const storage = await verifyAndGetTenantCollection({
-    collectionName, hostName, operationMsg: `upsert ${JSON.stringify(parameters)}`,
+    collectionName, hostName, operationMsg: `query ${JSON.stringify(query)}`,
   });
-  const queryCond = {identifier: parameters.identifier};
-  // mongodb expects to split the Operators to modify document
-  const {nonDollarOpsParams, dollarOpsParams} = splitParameters(parameters);
-  return await storage.findOneAndUpdate(queryCond,
-      {$set: {...nonDollarOpsParams}, ...dollarOpsParams}, {upsert: true});
+  return await storage.find(query, projection).toArray();
 }
 
-async function update({collectionName, parameters, hostName}) {
-  const operationMsg = `update data ${JSON.stringify(parameters)}`;
-  const tenantCollection = await verifyAndGetTenantCollection({
-    collectionName, hostName, operationMsg,
+function recallAllSorted({collectionName, query, sortCondition, hostName}) {
+  return connect(hostName).then((connectionToDb)=>{
+    return isGoodToStore({
+      collectionName, hostName, operationMsg: `query ${JSON.stringify(query)}`}).then(()=> {
+      const dbStorage = collection(collectionName, connectionToDb);
+      return dbStorage.find(query).sort(sortCondition).toArray();
+    });
   });
-  // mongodb expects to split the Operators to modify document
-  const {nonDollarOpsParams, dollarOpsParams} = splitParameters(parameters);
-  const updateResponse = tenantCollection.findOneAndUpdate({
-    identifier: parameters.identifier}, {$set: {...nonDollarOpsParams}, ...dollarOpsParams});
-  return updateResponse;
 }
 
-async function findAndUpdate({collectionName, parameters, query, hostName}) {
-  const storage = await verifyAndGetTenantCollection({
-    collectionName, operationMsg: `updating ${JSON.stringify(parameters)}`,
-    hostName,
+function recallWithAlias({query, collectionName, hostName}) {
+  return connect(hostName).then((connectionToDb)=>{
+    const operationMsg = `query parameter ${JSON.stringify(query)}`;
+    return isGoodToStore({
+      collectionName, operationMsg, hostName,
+    }).then(()=> {
+      return isEmptyQuery(query).then(() => {
+        const storage = collection(collectionName, connectionToDb);
+        return storage.aggregate([{$project: query}]).toArray();
+      });
+    });
   });
-  // mongodb expects to split the Operators to modify document
-  const {nonDollarOpsParams, dollarOpsParams} = splitParameters(parameters);
-  const updatedResult = await storage.updateOne(query,
-      {$set: {...nonDollarOpsParams}, ...dollarOpsParams}, {upsert: false});
-  return updatedResult;
 }
 
-async function findAndUpdateWithOptions({collectionName,
-  parameters, query, options, hostName}) {
-  const dbStorage = await verifyAndGetTenantCollection({
-    collectionName, hostName, operationMsg: `updating with options
-      ${JSON.stringify(parameters)}`,
-  });
-  // mongodb expects to split the Operators to modify document
-  const {nonDollarOpsParams, dollarOpsParams} = splitParameters(parameters);
-  const result = await dbStorage.updateOne(query,
-      {$set: {...nonDollarOpsParams}, ...dollarOpsParams}, {upsert: false, ...options});
-  return result;
-}
-
-async function insert({collectionName, parameters, hostName}) {
-  const storage = await verifyAndGetTenantCollection({
-    collectionName, hostName, operationMsg: `insert ${JSON.stringify(parameters)}`,
-  });
-  return await storage.insertMany([{...parameters}], {lean: true, checkKeys: false});
-}
-
-function splitParameters(parameters) {
-  const nonDollarOpsParams = {};
-  const dollarOpsParams = {};
-
-  for (const key in parameters) {
-    if (key.startsWith('$')) {
-      dollarOpsParams[key] = parameters[key];
-    } else {
-      nonDollarOpsParams[key] = parameters[key];
-    }
+function singleOrUndefined(resultSet) {
+  if (resultSet.length == 0) {
+    return Promise.resolve(undefined);
+  } else if (resultSet.length == 1) {
+    return Promise.resolve(resultSet[0]);
+  } else {
+    return Promise.reject(
+        Error(`single or none expected, but ${resultSet.length} found.
+        the first one is: ${JSON.stringify(resultSet[0])}`));
   }
-
-  return {nonDollarOpsParams, dollarOpsParams};
 }
 
-module.exports = {connect, upsert, insert,
-  findAndUpdate, findAndUpdateWithOptions, update};
+function recallWithAggregate({aggregateQuery, collectionName, hostName}) {
+  return connect(hostName)
+      .then((connectionToDb)=>{
+        return isGoodToStore({
+          collectionName,
+          operationMsg: `query parameter ${JSON.stringify(aggregateQuery)}`,
+          hostName,
+        }).then(()=> {
+          return isEmptyQuery(aggregateQuery).then(() => {
+            const storageCollection = collection(collectionName, connectionToDb);
+            return storageCollection.aggregate(aggregateQuery).toArray();
+          });
+        });
+      });
+}
+
+module.exports = {connect, recallOne, recallAll, recallWithAlias,
+  singleOrUndefined, deleteAll, deleteOne, recallWithAggregate,
+  recallAllSorted};
