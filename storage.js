@@ -6,7 +6,7 @@ const clientConnections = {};
 async function connect(hostName) {
   const {mongoUri, dbName} = {
     mongoUri:await getMongoUri('writeMongo' , hostName),
-    dbName:hostName,
+    dbName: 'admin',
   };
   try {
     const clientConn = clientConnections?.[mongoUri];
